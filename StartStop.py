@@ -1,42 +1,86 @@
+# Demonstrates how to stop or start all services in a folder
+
+# For Http calls
 import httplib, urllib, json
+
+# For system tools
 import sys
+
+# For reading passwords without echoing
 import getpass
 
-def main(argv=None):
-    print "This tool is a sample script that stops or starts all services in a folder."
 
+# Defines the entry point into the script
+def main(argv=None):
+    # Print some info
+    print
+    print "This tool is a sample script that stops or starts all services in a folder."
+    print  
+    
+    # Ask for admin/publisher user name and password
     username = raw_input("Enter user name: ")
     password = getpass.getpass("Enter password: ")
-
+    
+    # Ask for server name
     serverName = raw_input("Enter server name: ")
     serverPort = 6080
 
     folder = raw_input("Enter the folder name or ROOT for the root location: ")
-    stopOrStart = raw_input("Enter whether you want to START or STOP all services: ")
 
-    if str.upper(stopOrStart) != "START" and str.upper(stopOrStart) != "STOP":
-        print "Invalid STOP/START parameter entered"
-        return
-
+    #Print services in Folder
     token = getToken(username, password, serverName, serverPort)
-    if token == "":
-        print "Could not generate a token with the username and password provided."
-        return
-
     if str.upper(folder) == "ROOT":
         folder = ""
     else:
         folder += "/"
-
-    folderURL = "http://devgismapvsrv:6080/arcgis/admin/services/" + folder
-
     params = urllib.urlencode({'token': token, 'f': 'json'})
-
     headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
-
+    folderURL = "/arcgis/admin/services/" + folder
     httpConn = httplib.HTTPConnection(serverName, serverPort)
     httpConn.request("POST", folderURL, params, headers)
+    response = httpConn.getresponse()
+    data = response.read()
+    dataObj = json.loads(data)
+    print "Services in this Folder"
+    for item in dataObj['services']:
+        svc = item['serviceName'] + "\n"
+        print svc
+    httpConn.close()
 
+    serviceNme = raw_input("Enter name of service you wish to Start/Stop: ")
+
+    #Start or Stop ALL services in Folder
+    stopOrStart = raw_input("Enter whether you want to START or STOP the service: ")
+
+    # Check to make sure stop/start parameter is a valid value
+    if str.upper(stopOrStart) != "START" and str.upper(stopOrStart) != "STOP":
+        print "Invalid STOP/START parameter entered"
+        return
+    
+    # Get a token
+    token = getToken(username, password, serverName, serverPort)
+    if token == "":
+        print "Could not generate a token with the username and password provided."
+        return
+    
+    # Construct URL to read folder
+    if str.upper(folder) == "ROOT":
+        folder = ""
+    else:
+        folder += "/"
+            
+    folderURL = "/arcgis/admin/services/" + folder
+    
+    # This request only needs the token and the response formatting parameter 
+    params = urllib.urlencode({'token': token, 'f': 'json'})
+    
+    headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
+    
+    # Connect to URL and post parameters    
+    httpConn = httplib.HTTPConnection(serverName, serverPort)
+    httpConn.request("POST", folderURL, params, headers)
+    
+    # Read response
     response = httpConn.getresponse()
     if (response.status != 200):
         httpConn.close()
@@ -44,53 +88,54 @@ def main(argv=None):
         return
     else:
         data = response.read()
-
+        
+        # Check that data returned is not an error object
         if not assertJsonSuccess(data):          
             print "Error when reading folder information. " + str(data)
         else:
             print "Processed folder information successfully. Now processing services..."
 
+        # Deserialize response into Python object
         dataObj = json.loads(data)
         httpConn.close()
 
-        for item in dataObj['services']:
-
-            fullSvcName = item['serviceName'] + "." + item['type']
-
-            # Construct URL to stop or start service, then make the request                
-            stopOrStartURL = "http://devgismapvsrv:6080/arcgis/admin/services/" + folder + fullSvcName + "/" + stopOrStart
-            httpConn.request("POST", stopOrStartURL, params, headers)
+        # Loop through each service in the folder and stop or start it    
+        fullserviceName = serviceNme + '.' + item['type'] 
+        # Construct URL to stop or start service, then make the request                
+        stopOrStartURL = "/arcgis/admin/services/" + folder + fullserviceName + "/" + stopOrStart
+        httpConn.request("POST", stopOrStartURL, params, headers)
             
-            # Read stop or start response
-            stopStartResponse = httpConn.getresponse()
-            if (stopStartResponse.status != 200):
-                httpConn.close()
-                print "Error while executing stop or start. Please check the URL and try again."
-                return
-            else:
-                stopStartData = stopStartResponse.read()
+        # Read stop or start response
+        stopStartResponse = httpConn.getresponse()
+        if (stopStartResponse.status != 200):
+            print "Services in this Folder"
+            httpConn.close()
+            print "Error while executing stop or start. Please check the URL and try again."
+            return
+        else:
+            stopStartData = stopStartResponse.read()
                 
-                # Check that data returned is not an error object
-                if not assertJsonSuccess(stopStartData):
-                    if str.upper(stopOrStart) == "START":
-                        print "Error returned when starting service " + fullSvcName + "."
-                    else:
-                        print "Error returned when stopping service " + fullSvcName + "."
-
-                    print str(stopStartData)
-                    
+            # Check that data returned is not an error object
+            if not assertJsonSuccess(stopStartData):
+                if str.upper(stopOrStart) == "START":
+                    print "Error returned when starting service " + fullserviceName + "."
                 else:
-                    print "Service " + fullSvcName + " processed successfully."
+                    print "Error returned when stopping service " + fullserviceName + "."
 
-            httpConn.close()           
+                print str(stopStartData)
+                    
+            else:
+                print serviceNme + " service processed successfully."
+
+        httpConn.close()           
         
-        return
+        
 
 
 # A function to generate a token given username, password and the adminURL.
 def getToken(username, password, serverName, serverPort):
     # Token URL is typically http://server[:port]/arcgis/admin/generateToken
-    tokenURL = "http://devgismapvsrv:6080/arcgis/admin/generateToken"
+    tokenURL = "/arcgis/admin/generateToken"
     
     params = urllib.urlencode({'username': username, 'password': password, 'client': 'requestip', 'f': 'json'})
     
@@ -133,7 +178,7 @@ def assertJsonSuccess(data):
 # Script start
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
-            
+
 
 
 
