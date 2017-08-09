@@ -103,8 +103,7 @@ def main(argv=None):
                         print str(stopStartData)
                     else:
                         print "Service " + name + " processed successfully."
-    return
-    httpConn.close()  
+        return
             
             
 
@@ -301,3 +300,4 @@ def assertJsonSuccess(data):
 # Script start
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+
