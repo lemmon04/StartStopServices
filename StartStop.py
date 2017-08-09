@@ -16,25 +16,103 @@ def main(argv=None):
     print
     print "This tool is a script that stops or starts a service/s in a folder."
     print  
-    
+
     # Ask for admin/publisher user name and password
     username = raw_input("Enter user name: ")
     password = getpass.getpass("Enter password: ")
     
-    # Ask for server name
+    # Ask for server name/port
     serverName = raw_input("Enter server name: ")
     serverPort = raw_input("Enter server port: ")
 
-    folder = raw_input("Enter the folder name or ROOT for the root location: ")
-
-    #Print status of services in Folder
+    #Establish Token $ Parameters
     token = getToken(username, password, serverName, serverPort)
+    params = urllib.urlencode({'token': token, 'f': 'json'})
+    headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
+
+    #Get names of all folders on server
+    httpConn = httplib.HTTPConnection(serverName, serverPort)
+    httpConn.request("POST", "/arcgis/admin/services", params, headers)
+    response = httpConn.getresponse()
+    data = response.read()
+    dataObj = json.loads(data)
+    print "\n" + "Folders on this server:" 
+    for item in dataObj['folders']:
+        print item
+    print "ROOT"
+    print 
+    #Ask for folder 
+    folder = raw_input("Enter the folder name or ROOT for the root location or all to turn all services on server on/off: ")
+
+    #Turn All services on server on/off
+    if str.upper(folder) == "ALL":
+        stopOrStart = raw_input("Enter Start/Stop to turn all services on/off on server: ")
+        httpConn = httplib.HTTPConnection(serverName, serverPort)
+        httpConn.request("POST", "/arcgis/admin/services", params, headers)
+        response = httpConn.getresponse()
+        data = response.read()
+        dataObj = json.loads(data)
+        #Turn services on/off on ROOT
+        for item in dataObj['services']:
+            name = item['serviceName']
+            svcType = item['type']
+            httpConn.request("POST", "/arcgis/admin/services/" + name + "." + svcType + "/" + stopOrStart, params, headers)
+            response = httpConn.getresponse()
+            if (response.status != 200):
+                httpConn.close()
+                print "Error while executing stop or start. Please check the URL and try again."
+                return
+            else:
+                stopStartData = response.read()
+                # Check that data returned is not an error object
+                if not assertJsonSuccess(stopStartData):
+                    if str.upper(stopOrStart) == "START":
+                        print "Error returned when starting service " + name + "."
+                    else:
+                        print "Error returned when stopping service " + name + "."
+
+                    print str(stopStartData)
+                else:
+                    print "Service " + name + " processed successfully."         
+        #Connect to each folder
+        for item in dataObj['foldersDetail']:
+            folder = item['folderName']
+            httpConn.request("POST", "/arcgis/admin/services/" + folder, params, headers)
+            response = httpConn.getresponse()
+            data = response.read()
+            dataObj = json.loads(data)
+            #Connect to each service in folder
+            for item in dataObj['services']:
+                name = item['serviceName']
+                svcType = item['type']
+                stopOrStartURL = "/arcgis/admin/services/" + folder + "/" + name + "." + svcType + "/" + stopOrStart
+                httpConn.request("POST", stopOrStartURL, params, headers)
+                response = httpConn.getresponse()
+                if (response.status != 200):
+                    httpConn.close()
+                    print "Error while executing stop or start. Please check the URL and try again."
+                    return
+                else:
+                    stopStartData = response.read()
+                    # Check that data returned is not an error object
+                    if not assertJsonSuccess(stopStartData):
+                        if str.upper(stopOrStart) == "START":
+                            print "Error returned when starting service " + name + "."
+                        else:
+                            print "Error returned when stopping service " + name + "."
+                        print str(stopStartData)
+                    else:
+                        print "Service " + name + " processed successfully."
+    return
+    httpConn.close()  
+            
+            
+
+    #Get status of services in Folder
     if str.upper(folder) == "ROOT":
         folder = ""
     else:
         folder += "/"
-    params = urllib.urlencode({'token': token, 'f': 'json'})
-    headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
     folderURL = "/arcgis/admin/services/" + folder
     httpConn = httplib.HTTPConnection(serverName, serverPort)
     httpConn.request("POST", folderURL, params, headers)
@@ -47,7 +125,7 @@ def main(argv=None):
         svctype = item['type']
         httpConn.close()
 
-        #Get status of services in folder
+        #Print status of services in folder
         httpConn = httplib.HTTPConnection(serverName, serverPort)
         httpConn.request("POST", folderURL+svc+"."+svctype, params, headers)
         response = httpConn.getresponse()
@@ -223,5 +301,3 @@ def assertJsonSuccess(data):
 # Script start
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
-
-
