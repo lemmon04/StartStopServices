@@ -14,7 +14,7 @@ import getpass
 def main(argv=None):
     # Print some info
     print
-    print "This tool is a sample script that stops or starts all services in a folder."
+    print "This tool is a script that stops or starts a service/s in a folder."
     print  
     
     # Ask for admin/publisher user name and password
@@ -23,11 +23,11 @@ def main(argv=None):
     
     # Ask for server name
     serverName = raw_input("Enter server name: ")
-    serverPort = 6080
+    serverPort = raw_input("Enter server port: ")
 
     folder = raw_input("Enter the folder name or ROOT for the root location: ")
 
-    #Print services in Folder
+    #Print status of services in Folder
     token = getToken(username, password, serverName, serverPort)
     if str.upper(folder) == "ROOT":
         folder = ""
@@ -41,13 +41,24 @@ def main(argv=None):
     response = httpConn.getresponse()
     data = response.read()
     dataObj = json.loads(data)
-    print "Services in this Folder"
+    print "\n" + "Services in this folder"
     for item in dataObj['services']:
-        svc = item['serviceName'] + "\n"
-        print svc
-    httpConn.close()
+        svc = item['serviceName']
+        svctype = item['type']
+        httpConn.close()
 
-    serviceNme = raw_input("Enter name of service you wish to Start/Stop: ")
+        #Get status of services in folder
+        httpConn = httplib.HTTPConnection(serverName, serverPort)
+        httpConn.request("POST", folderURL+svc+"."+svctype, params, headers)
+        response = httpConn.getresponse()
+        data = response.read()
+        dataObj = json.loads(data)
+        status = dataObj['configuredState']
+        print svc + ": " + status
+    print "\n"   
+
+    #Enter name of service to Start or Stop
+    serviceName = raw_input("Enter all to Start/Stop all services or name individual service: ")
 
     #Start or Stop ALL services in Folder
     stopOrStart = raw_input("Enter whether you want to START or STOP the service: ")
@@ -99,8 +110,42 @@ def main(argv=None):
         dataObj = json.loads(data)
         httpConn.close()
 
-        # Loop through each service in the folder and stop or start it    
-        fullserviceName = serviceNme + '.' + item['type'] 
+        # Loop through each service in the folder and stop or start it
+        if str.upper(serviceName) == "ALL":
+            for item in dataObj['services']:
+                fullSvcName = item['serviceName'] + "." + item['type']
+
+                # Construct URL to stop or start service, then make the request                
+                stopOrStartURL = "/arcgis/admin/services/" + folder + fullSvcName + "/" + stopOrStart
+                httpConn.request("POST", stopOrStartURL, params, headers)
+            
+                # Read stop or start response
+                stopStartResponse = httpConn.getresponse()
+                if (stopStartResponse.status != 200):
+                    httpConn.close()
+                    print "Error while executing stop or start. Please check the URL and try again."
+                    return
+                else:
+                    stopStartData = stopStartResponse.read()
+                
+                    # Check that data returned is not an error object
+                    if not assertJsonSuccess(stopStartData):
+                        if str.upper(stopOrStart) == "START":
+                            print "Error returned when starting service " + fullSvcName + "."
+                        else:
+                            print "Error returned when stopping service " + fullSvcName + "."
+
+                        print str(stopStartData)
+                    
+                    else:
+                        print "Service " + fullSvcName + " processed successfully."
+
+                httpConn.close()           
+        
+            return
+            
+        fullserviceName = serviceName + '.' + item['type'] 
+
         # Construct URL to stop or start service, then make the request                
         stopOrStartURL = "/arcgis/admin/services/" + folder + fullserviceName + "/" + stopOrStart
         httpConn.request("POST", stopOrStartURL, params, headers)
@@ -125,7 +170,7 @@ def main(argv=None):
                 print str(stopStartData)
                     
             else:
-                print serviceNme + " service processed successfully."
+                print serviceName + " service processed successfully."
 
         httpConn.close()           
         
@@ -179,20 +224,4 @@ def assertJsonSuccess(data):
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-            
-
-    
 
