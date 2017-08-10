@@ -1,7 +1,7 @@
 # Demonstrates how to stop or start all services in a folder
 
 # For Http calls
-import httplib, urllib, json
+import httplib, urllib, json, time, re
 
 # For system tools
 import sys
@@ -42,8 +42,71 @@ def main(argv=None):
     print "ROOT"
     print 
     #Ask for folder 
-    folder = raw_input("Enter the folder name or ROOT for the root location or all to turn all services on server on/off: ")
+    folder = raw_input("Enter the folder name or ""all"" to turn all services on server on/off or reverse: ")
 
+    #Reverses the status of the most recently adjusted services
+    if str.upper(folder) == "REVERSE":
+        file = open("C:\Michael\status.txt", "r")
+        for line in file:
+            if "." in line:
+                name_split = line.split(".")
+                name = name_split[0]
+                svcType = line[line.find(".")+1:line.find(":")]
+                status = line[line.find(":")+1:line.find(";")]
+                afolder = line[line.find(";")+1:line.find("/")]
+                print name + "." + svcType + ":" + status + " will be reversed"
+                if str.upper(status) == "STARTED":
+                    status = "stop"
+                    stopOrStart = "stop"
+                    httpConn = httplib.HTTPConnection(serverName, serverPort)
+                    httpConn.request("POST", "/arcgis/admin/services/" + afolder + "/" + name + "." + svcType + "/" + status, params, headers)
+                    response = httpConn.getresponse()
+                    if (response.status != 200):
+                        httpConn.close()
+                        print "Error while executing stop or start. Please check the URL and try again."
+                        return
+                    else:
+                        stopStartData = response.read()
+                        # Check that data returned is not an error object
+                        if not assertJsonSuccess(stopStartData):
+                            if str.upper(stopOrStart) == "START":
+                                print "Error returned when starting service " + name + "."
+                            else:
+                                print "Error returned when stopping service " + name + "."
+
+                            print str(stopStartData)
+                        else:
+                            print "Service " + name + " processed successfully."
+                            
+                elif str.upper(status) == "STOPPED":
+                    status = "start"
+                    stopOrStart = "start"
+                    httpConn = httplib.HTTPConnection(serverName, serverPort)
+                    httpConn.request("POST", "/arcgis/admin/services/" + afolder + "/" + name + "." + svcType + "/" + status, params, headers)
+                    response = httpConn.getresponse()
+                    if (response.status != 200):
+                        httpConn.close()
+                        print "Error while executing stop or start. Please check the URL and try again."
+                        return
+                    else:
+                        stopStartData = response.read()
+                        # Check that data returned is not an error object
+                        if not assertJsonSuccess(stopStartData):
+                            if str.upper(stopOrStart) == "STOP":
+                                print "Error returned when starting service " + name + "."
+                            else:
+                                print "Error returned when stopping service " + name + "."
+
+                            print str(stopStartData)
+                        else:
+                            print "Service " + name + " processed successfully."
+        file = open("status.txt","a")
+        file.write("These services have been reversed" + "\n")
+        return
+                           
+            
+    file = open("status.txt","w")
+    file.write(time.strftime("%m/%d/%y" + "\n"))
     #Turn All services on server on/off
     if str.upper(folder) == "ALL":
         stopOrStart = raw_input("Enter Start/Stop to turn all services on/off on server: ")
@@ -56,8 +119,16 @@ def main(argv=None):
         for item in dataObj['services']:
             name = item['serviceName']
             svcType = item['type']
+            fullserviceName = name + '.' + item['type'] 
             httpConn.request("POST", "/arcgis/admin/services/" + name + "." + svcType + "/" + stopOrStart, params, headers)
             response = httpConn.getresponse()
+            if str.upper(stopOrStart) == "START":
+                status = "STARTED"
+                file.write(fullserviceName+":"+ status + ";" + "/" + "\n")
+            elif str.upper(stopOrStart) == "STOP":
+                status = "STOPPED"
+                file.write(fullserviceName+":"+ status + ";" + "/" + "\n")
+                
             if (response.status != 200):
                 httpConn.close()
                 print "Error while executing stop or start. Please check the URL and try again."
@@ -73,8 +144,13 @@ def main(argv=None):
 
                     print str(stopStartData)
                 else:
-                    print "Service " + name + " processed successfully."         
+                    print "Service " + name + " processed successfully."
+
         #Connect to each folder
+        httpConn.request("POST", "/arcgis/admin/services", params, headers)
+        response = httpConn.getresponse()
+        data = response.read()
+        dataObj = json.loads(data)
         for item in dataObj['foldersDetail']:
             folder = item['folderName']
             httpConn.request("POST", "/arcgis/admin/services/" + folder, params, headers)
@@ -85,6 +161,13 @@ def main(argv=None):
             for item in dataObj['services']:
                 name = item['serviceName']
                 svcType = item['type']
+                fullserviceName = name + '.' + item['type'] 
+                if str.upper(stopOrStart) == "START":
+                    status = "STARTED"
+                    file.write(fullserviceName+":"+ status + ";" + folder + "\n")
+                elif str.upper(stopOrStart) == "STOP":
+                    status = "STOPPED"
+                    file.write(fullserviceName+":"+ status + ";" + folder + "\n")
                 stopOrStartURL = "/arcgis/admin/services/" + folder + "/" + name + "." + svcType + "/" + stopOrStart
                 httpConn.request("POST", stopOrStartURL, params, headers)
                 response = httpConn.getresponse()
@@ -103,6 +186,7 @@ def main(argv=None):
                         print str(stopStartData)
                     else:
                         print "Service " + name + " processed successfully."
+                
         return
             
             
@@ -126,7 +210,7 @@ def main(argv=None):
 
         #Print status of services in folder
         httpConn = httplib.HTTPConnection(serverName, serverPort)
-        httpConn.request("POST", folderURL+svc+"."+svctype, params, headers)
+        httpConn.request("POST", folderURL+svc+"."+ svctype, params, headers)
         response = httpConn.getresponse()
         data = response.read()
         dataObj = json.loads(data)
@@ -186,16 +270,22 @@ def main(argv=None):
         # Deserialize response into Python object
         dataObj = json.loads(data)
         httpConn.close()
-
+ 
         # Loop through each service in the folder and stop or start it
         if str.upper(serviceName) == "ALL":
             for item in dataObj['services']:
-                fullSvcName = item['serviceName'] + "." + item['type']
-
-                # Construct URL to stop or start service, then make the request                
-                stopOrStartURL = "/arcgis/admin/services/" + folder + fullSvcName + "/" + stopOrStart
+                fullserviceName = item['serviceName'] + "." + item['type']
+                if str.upper(serviceName) == "ALL":
+                    if str.upper(stopOrStart) == "START":
+                        status = "STARTED"
+                        file.write(fullserviceName+":"+ status + ";" + folder + "\n")
+                    elif str.upper(stopOrStart) == "STOP":
+                        status = "STOPPED"
+                        file.write(fullserviceName+":"+ status + ";" + folder + "\n")
+                # Construct URL to stop or start service, then make the request
+                stopOrStartURL = "/arcgis/admin/services/" + folder + fullserviceName + "/" + stopOrStart
                 httpConn.request("POST", stopOrStartURL, params, headers)
-            
+                
                 # Read stop or start response
                 stopStartResponse = httpConn.getresponse()
                 if (stopStartResponse.status != 200):
@@ -215,18 +305,24 @@ def main(argv=None):
                         print str(stopStartData)
                     
                     else:
-                        print "Service " + fullSvcName + " processed successfully."
-
-                httpConn.close()           
+                        print "Service " + fullserviceName + " processed successfully."
         
             return
             
         fullserviceName = serviceName + '.' + item['type'] 
 
-        # Construct URL to stop or start service, then make the request                
+        # Get status of the service after request and write to a text file
+        if str.upper(stopOrStart) == "START":
+            status = "STARTED"
+            file.write(fullserviceName+":"+ status + ";" + folder + "\n")
+        elif str.upper(stopOrStart) == "STOP":
+            status = "STOPPED"
+            file.write(fullserviceName+":"+ status + ";" + folder + "\n")
+        
+        
+        # Construct URL to stop or start service, then make the request
         stopOrStartURL = "/arcgis/admin/services/" + folder + fullserviceName + "/" + stopOrStart
         httpConn.request("POST", stopOrStartURL, params, headers)
-            
         # Read stop or start response
         stopStartResponse = httpConn.getresponse()
         if (stopStartResponse.status != 200):
@@ -300,4 +396,3 @@ def assertJsonSuccess(data):
 # Script start
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
-
