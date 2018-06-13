@@ -42,7 +42,7 @@ def main(argv=None):
     print "ROOT"
     print 
     #Ask for folder 
-    folder = raw_input("Enter the folder name or ""all"" to turn all services on server on/off or reverse: ")
+    folder = raw_input("Enter the folder name OR ""all"" to turn all services on server on/off OR reverse: ")
 
     #Reverses the status of the most recently adjusted services
     if str.upper(folder) == "REVERSE":
